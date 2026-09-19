@@ -480,6 +480,59 @@
   #fallbackLink a{ color:var(--amber); text-decoration:underline; }
   #fallbackLink a:hover{ color:var(--pink); }
 
+  .playlist-toggle{
+    flex:none; font-size:15px; width:30px; height:30px;
+  }
+
+  .playlist-panel{
+    position:absolute; left:0; right:0; bottom:calc(100% + 10px);
+    max-height:0; overflow:hidden;
+    background:rgba(10,20,16,0.88);
+    border:1px solid rgba(73,255,166,0.25);
+    border-radius:14px;
+    backdrop-filter:blur(16px) saturate(140%);
+    -webkit-backdrop-filter:blur(16px) saturate(140%);
+    box-shadow:0 12px 40px rgba(0,0,0,0.5);
+    transition:max-height .3s ease, opacity .25s ease, transform .25s ease;
+    opacity:0; transform:translateY(8px);
+    pointer-events:none;
+  }
+  .playlist-panel.open{
+    max-height:min(360px, 60vh);
+    opacity:1; transform:translateY(0);
+    pointer-events:auto;
+  }
+  .playlist-panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; font-size:12px; letter-spacing:1px; color:var(--green);
+    border-bottom:1px solid rgba(73,255,166,0.15);
+  }
+  .playlist-panel-head .ctrl-btn{ width:24px; height:24px; font-size:12px; }
+  .playlist-list{
+    list-style:none; margin:0; padding:6px;
+    max-height:calc(min(360px, 60vh) - 40px);
+    overflow-y:auto;
+  }
+  .playlist-list li{
+    display:flex; align-items:baseline; gap:8px;
+    padding:8px 10px; border-radius:8px; cursor:pointer;
+    font-size:12.5px; color:#c9f2df;
+    transition:background .12s;
+  }
+  .playlist-list li:hover{ background:rgba(73,255,166,0.1); }
+  .playlist-list li .n{ color:var(--amber); font-size:11px; flex:none; width:18px; }
+  .playlist-list li .t{
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .playlist-list li.active{
+    background:rgba(255,61,129,0.12);
+    color:var(--pink);
+  }
+  .playlist-list li.active .n{ color:var(--pink); }
+  .playlist-loading{ text-align:center; color:#6fae93; font-size:11px; padding:14px 0 !important; cursor:default !important; }
+  .playlist-list::-webkit-scrollbar{ width:6px; }
+  .playlist-list::-webkit-scrollbar-thumb{ background:var(--green-dim); border-radius:6px; }
+
   /* toast */
   .toast{
     position:fixed; left:50%; bottom:130px; transform:translateX(-50%) translateY(10px);
@@ -606,9 +659,10 @@
     <div class="disk" id="disk"></div>
     <div class="track-info">
       <div class="track-name" id="trackName">Loading track…</div>
-      <div class="track-sub">Cyber Café Nostalgia Mixtape</div>
+      <div class="track-sub" id="trackSub">Cyber Café Nostalgia Mixtape</div>
     </div>
     <div class="eq"><span></span><span></span><span></span><span></span></div>
+    <button class="ctrl-btn playlist-toggle" id="playlistBtn" aria-label="Show playlist" title="Show playlist">📋</button>
   </div>
 
   <div class="progress-row">
@@ -620,13 +674,23 @@
   </div>
 
   <div class="controls-row">
-    <button class="ctrl-btn" id="prevBtn" aria-label="Back 10 seconds">⏮</button>
+    <button class="ctrl-btn" id="prevBtn" aria-label="Previous track">⏮</button>
     <button class="ctrl-btn play" id="playBtn" aria-label="Play or pause">▶</button>
-    <button class="ctrl-btn" id="nextBtn" aria-label="Forward 10 seconds">⏭</button>
+    <button class="ctrl-btn" id="nextBtn" aria-label="Next track">⏭</button>
   </div>
   <div class="player-note" id="playerNote">🎧 streaming the shared cyber-café playlist</div>
   <div class="player-note" id="fallbackLink" style="display:none;">
-    <a href="https://youtu.be/SuvLrBH8UHk" target="_blank" rel="noopener">▶ open track on YouTube instead</a>
+    <a href="https://youtube.com/playlist?list=PLBV7F1q_mp18" target="_blank" rel="noopener">▶ open playlist on YouTube instead</a>
+  </div>
+
+  <div class="playlist-panel" id="playlistPanel">
+    <div class="playlist-panel-head">
+      <span>📋 Playlist</span>
+      <button class="ctrl-btn" id="playlistCloseBtn" aria-label="Close playlist">✕</button>
+    </div>
+    <ul class="playlist-list" id="playlistList">
+      <li class="playlist-loading">Loading track list…</li>
+    </ul>
   </div>
 </div>
 
@@ -798,7 +862,7 @@ function rotateQuote(){
 setInterval(rotateQuote, 4200);
 
 /* ================= YOUTUBE MUSIC PLAYER ================= */
-const YT_VIDEO_ID = 'SuvLrBH8UHk';
+const YT_PLAYLIST_ID = 'PLBV7F1q_mp18';
 
 let ytPlayer, ytReady = false;
 function playerUsable(){
@@ -816,6 +880,11 @@ const progressBar = document.getElementById('progressBar');
 const progressFill = document.getElementById('progressFill');
 const curTimeEl = document.getElementById('curTime');
 const durTimeEl = document.getElementById('durTime');
+const trackSub = document.getElementById('trackSub');
+const playlistBtn = document.getElementById('playlistBtn');
+const playlistPanel = document.getElementById('playlistPanel');
+const playlistList = document.getElementById('playlistList');
+const playlistCloseBtn = document.getElementById('playlistCloseBtn');
 
 function fmt(s){
   if(!isFinite(s) || s<0) s=0;
@@ -841,8 +910,10 @@ function loadYT(){
 window.onYouTubeIframeAPIReady = function(){
   ytPlayer = new YT.Player('yt-player', {
     height: '1', width: '1',
-    videoId: YT_VIDEO_ID,
-    playerVars: { playsinline: 1, controls: 0, rel: 0, modestbranding: 1 },
+    playerVars: {
+      playsinline: 1, controls: 0, rel: 0, modestbranding: 1,
+      listType: 'playlist', list: YT_PLAYLIST_ID
+    },
     events: {
       onReady: onYTReady,
       onStateChange: onYTStateChange,
@@ -851,12 +922,96 @@ window.onYouTubeIframeAPIReady = function(){
   });
 };
 
+function updateTrackInfo(){
+  const data = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
+  trackName.textContent = (data && data.title) ? data.title : 'Loading track…';
+  durTimeEl.textContent = fmt(ytPlayer.getDuration());
+  try{
+    const idx = ytPlayer.getPlaylistIndex();
+    const list = ytPlayer.getPlaylist();
+    if(idx > -1 && list && list.length){
+      trackSub.textContent = `Cyber Café Nostalgia Mixtape · Track ${idx+1} of ${list.length}`;
+    }
+  }catch(err){ /* playlist not ready yet, keep default subtitle */ }
+}
+
+function updateTrackInfo(){
+  const data = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
+  trackName.textContent = (data && data.title) ? data.title : 'Loading track…';
+  durTimeEl.textContent = fmt(ytPlayer.getDuration());
+  try{
+    const idx = ytPlayer.getPlaylistIndex();
+    const list = ytPlayer.getPlaylist();
+    if(idx > -1 && list && list.length){
+      trackSub.textContent = `Cyber Café Nostalgia Mixtape · Track ${idx+1} of ${list.length}`;
+      highlightActiveTrack(idx);
+    }
+  }catch(err){ /* playlist not ready yet, keep default subtitle */ }
+}
+
+function highlightActiveTrack(idx){
+  const items = playlistList.querySelectorAll('li[data-idx]');
+  items.forEach(li => {
+    li.classList.toggle('active', Number(li.dataset.idx) === idx);
+  });
+}
+
+let playlistPopulated = false;
+async function populatePlaylist(){
+  if(playlistPopulated || !playerUsable()) return;
+  const ids = ytPlayer.getPlaylist();
+  if(!ids || !ids.length) return;
+  playlistPopulated = true;
+  playlistList.innerHTML = '';
+  const currentIdx = ytPlayer.getPlaylistIndex ? ytPlayer.getPlaylistIndex() : -1;
+
+  ids.forEach((videoId, i) => {
+    const li = document.createElement('li');
+    li.dataset.idx = i;
+    if(i === currentIdx) li.classList.add('active');
+    li.innerHTML = `<span class="n">${i+1}.</span><span class="t">Track ${i+1}</span>`;
+    li.addEventListener('click', () => {
+      ytPlayer.playVideoAt(i);
+      ytPlayer.playVideo();
+      closePlaylistPanel();
+    });
+    playlistList.appendChild(li);
+
+    // fetch the real title via YouTube's public oEmbed endpoint (no API key needed)
+    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if(data && data.title){
+          li.querySelector('.t').textContent = data.title;
+        }
+      })
+      .catch(() => { /* keep the generic "Track N" label if this fails */ });
+  });
+}
+
+function openPlaylistPanel(){
+  playlistPanel.classList.add('open');
+  populatePlaylist();
+}
+function closePlaylistPanel(){
+  playlistPanel.classList.remove('open');
+}
+playlistBtn.addEventListener('click', () => {
+  playlistPanel.classList.contains('open') ? closePlaylistPanel() : openPlaylistPanel();
+});
+playlistCloseBtn.addEventListener('click', closePlaylistPanel);
+document.addEventListener('click', (e) => {
+  if(playlistPanel.classList.contains('open') &&
+     !playlistPanel.contains(e.target) &&
+     e.target !== playlistBtn){
+    closePlaylistPanel();
+  }
+});
+
 function onYTReady(){
   ytReady = true;
   clearTimeout(apiLoadTimer);
-  const data = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
-  trackName.textContent = (data && data.title) ? data.title : 'Track 01 — Dial-Up Dreams';
-  durTimeEl.textContent = fmt(ytPlayer.getDuration());
+  updateTrackInfo();
 }
 
 function onYTStateChange(e){
@@ -865,10 +1020,11 @@ function onYTStateChange(e){
   if(!ytReady && playerUsable()){
     ytReady = true;
     clearTimeout(apiLoadTimer);
-    const data = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
-    if(data && data.title) trackName.textContent = data.title;
     fallbackLink.style.display = 'none';
     playerNote.textContent = '🎧 streaming the shared cyber-café playlist';
+  }
+  if(e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.CUED){
+    updateTrackInfo();
   }
   if(e.data === YT.PlayerState.PLAYING){
     playerEl.classList.remove('paused');
@@ -914,15 +1070,13 @@ playBtn.addEventListener('click', () => {
 
 prevBtn.addEventListener('click', () => {
   if(!playerUsable()) return;
-  const t = Math.max(0, ytPlayer.getCurrentTime() - 10);
-  ytPlayer.seekTo(t, true);
-  showToast('⏮ rewound 10s');
+  ytPlayer.previousVideo();
+  showToast('⏮ previous track');
 });
 nextBtn.addEventListener('click', () => {
   if(!playerUsable()) return;
-  const t = Math.min(ytPlayer.getDuration()-1, ytPlayer.getCurrentTime() + 10);
-  ytPlayer.seekTo(t, true);
-  showToast('⏭ skipped 10s');
+  ytPlayer.nextVideo();
+  showToast('⏭ next track');
 });
 
 progressBar.addEventListener('click', (e) => {
