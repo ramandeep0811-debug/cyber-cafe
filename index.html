@@ -795,11 +795,36 @@ setInterval(() => {
 }, 4200);
 
 /* ================= YOUTUBE MUSIC PLAYER (multi-playlist) ================= */
-const PLAYLISTS = [
+// Live-synced with the channel below via the YouTube Data API — any new
+// Public playlist you create on this channel will show up automatically.
+const YT_API_KEY = 'AIzaSyAy76aF3Fwo50bvQ_qJBs5ZWARy98VjY0o';
+const YT_CHANNEL_ID = 'UClLLLV4NJWoMwlWDOOde7Kg';
+
+// Fallback list used only if the live fetch fails (e.g. key/quota issue)
+let PLAYLISTS = [
   { id: 'PLBV7F1q_mp18', name: 'Punjabi', desc: '43 tracks · Ramandeep\'s picks' },
   { id: 'PLV5RSr7BhKjA', name: 'Haryanvi', desc: '2 tracks · Ramandeep\'s picks' },
   { id: 'PLYVFuFMH31nU', name: 'Hip Hop', desc: '1 track · Ramandeep\'s picks' }
 ];
+
+async function fetchChannelPlaylists(){
+  try{
+    const url = `https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${YT_CHANNEL_ID}&maxResults=50&key=${YT_API_KEY}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('YouTube API request failed: ' + res.status);
+    const data = await res.json();
+    if(!data.items || !data.items.length) throw new Error('No public playlists found on this channel.');
+    PLAYLISTS = data.items.map(item => ({
+      id: item.id,
+      name: item.snippet.title,
+      desc: `${item.contentDetails.itemCount} track${item.contentDetails.itemCount === 1 ? '' : 's'} · ${item.snippet.channelTitle}`
+    }));
+    buildChooser();
+  }catch(err){
+    console.warn('Live playlist sync failed, using fallback list:', err);
+    showToast('⚠️ Live playlist sync failed — showing saved list');
+  }
+}
 
 let ytPlayer, ytReady = false, currentPlaylistId = null, apiLoadTimer;
 function playerUsable(){
@@ -1022,7 +1047,8 @@ setInterval(() => {
   }
 }, 400);
 
-buildChooser();
+buildChooser(); // render fallback list immediately, then replace with live data
+fetchChannelPlaylists();
 loadYT();
 setTimeout(()=> showToast('📼 pick a playlist from the poster to get started'), 900);
 </script>
